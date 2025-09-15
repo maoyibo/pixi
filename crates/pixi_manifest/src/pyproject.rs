@@ -416,6 +416,7 @@ impl PyProjectManifest {
                     .try_add_pep508_dependency(
                         &requirement.value,
                         None,
+                        &None,
                         DependencyOverwriteBehavior::Error,
                     )
                     .map_err(|err| {
@@ -446,6 +447,7 @@ impl PyProjectManifest {
                         .try_add_pep508_dependency(
                             requirement,
                             None,
+                            &None,
                             DependencyOverwriteBehavior::Error,
                         )
                         .map_err(|err| GenericError::new(format!("{}", err)))?;

@@ -237,6 +237,11 @@ impl PypiOptions {
             no_binary,
         })
     }
+    /// Converts this instance into a [`toml_edit::Value`].
+    pub fn to_toml_value(&self) -> toml_edit::Value {
+        ::serde::Serialize::serialize(self, toml_edit::ser::ValueSerializer::new())
+            .expect("conversion to toml cannot fail")
+    }
 }
 
 // Implement the generic `MergeUnion` trait for our union-able types so they can be

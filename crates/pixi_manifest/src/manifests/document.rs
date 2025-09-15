@@ -7,11 +7,12 @@ use pixi_spec::PixiSpec;
 use rattler_conda_types::{PackageName, Platform};
 use thiserror::Error;
 use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
+use url::Url;
 
 use crate::{
     FeatureName, LibCSystemRequirement, ManifestKind, ManifestProvenance, PypiDependencyLocation,
     SpecType, SystemRequirements, Task, TomlError, manifests::table_name::TableName,
-    toml::TomlDocument, utils::WithSourceCode,
+    pypi::pypi_options::PypiOptions, toml::TomlDocument, utils::WithSourceCode,
 };
 
 /// Discriminates between a 'pixi.toml' and a 'pyproject.toml' manifest.
@@ -371,6 +372,32 @@ impl ManifestDocument {
         Ok(())
     }
 
+    /// Adds pypi_options to the TOML manifest
+    pub fn add_pypi_options(
+        &mut self,
+        options: &PypiOptions,
+        feature_name: &FeatureName,
+    ) -> Result<(), TomlError> {
+        // The '[pypi-options]' or '[tool.pixi.pypi-options]' table is selected
+        //  - For 'pixi.toml' manifests where it is the only choice
+        if matches!(self, ManifestDocument::PixiToml(_)) {
+            let dependency_table_name = TableName::new()
+                .with_prefix(self.table_prefix())
+                .with_feature_name(Some(feature_name))
+                .with_table(Some(consts::PYPI_OPTIONS));
+            let table = self
+                .manifest_mut()
+                .get_or_insert_nested_table(&dependency_table_name.as_keys())?;
+
+            // Manually convert PypiOptions to a TOML table
+            let options_table = options.to_toml_value();
+            for (key, value) in options_table.as_inline_table().unwrap().into_iter() {
+                table.insert(key, toml_edit::Item::Value(value.clone()));
+            }
+        }
+        Ok(())
+    }
+
     /// Adds a pypi dependency to the TOML manifest
     ///
     /// If a pypi dependency with the same name already exists, it will be
@@ -382,6 +409,7 @@ impl ManifestDocument {
         platform: Option<Platform>,
         feature_name: &FeatureName,
         editable: Option<bool>,
+        pypi_index: &Option<Url>,
         location: Option<PypiDependencyLocation>,
     ) -> Result<(), TomlError> {
         // The '[pypi-dependencies]' or '[tool.pixi.pypi-dependencies]' table is
@@ -402,6 +430,12 @@ impl ManifestDocument {
                 pypi_requirement.set_editable(editable);
             }
 
+            if pypi_index.is_some() {
+                match pypi_requirement {
+                    PixiPypiSpec::Version { ref mut index, .. } => *index = pypi_index.clone(),
+                    _ => (),
+                }
+            }
             let dependency_table_name = TableName::new()
                 .with_prefix(self.table_prefix())
                 .with_platform(platform.as_ref())
@@ -894,6 +928,7 @@ NumPy = ">=1.20.0" # table inline comment
                 None,
                 &FeatureName::default(),
                 None,
+                &None,
                 Some(PypiDependencyLocation::Dependencies),
             )
             .unwrap();
@@ -906,6 +941,7 @@ NumPy = ">=1.20.0" # table inline comment
                 None,
                 &FeatureName::from_str("dev").unwrap(),
                 None,
+                &None,
                 Some(PypiDependencyLocation::OptionalDependencies),
             )
             .unwrap();
@@ -918,6 +954,7 @@ NumPy = ">=1.20.0" # table inline comment
                 None,
                 &FeatureName::default(),
                 None,
+                &None,
                 Some(crate::PypiDependencyLocation::PixiPypiDependencies),
             )
             .unwrap();

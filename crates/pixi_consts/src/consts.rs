@@ -21,6 +21,7 @@ pub const PIXI_VERSION: &str = match option_env!("PIXI_VERSION") {
 pub const PREFIX_FILE_NAME: &str = "pixi_env_prefix";
 pub const ENVIRONMENTS_DIR: &str = "envs";
 pub const SOLVE_GROUP_ENVIRONMENTS_DIR: &str = "solve-group-envs";
+pub const PYPI_OPTIONS: &str = "pypi-options";
 pub const PYPI_DEPENDENCIES: &str = "pypi-dependencies";
 pub const DEPENDENCIES: &str = "dependencies";
 pub const SYSTEM_REQUIREMENTS: &str = "system-requirements";

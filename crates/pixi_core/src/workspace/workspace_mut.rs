@@ -21,6 +21,7 @@ use pixi_spec::PixiSpec;
 use rattler_conda_types::{MatchSpec, NamelessMatchSpec, PackageName, Platform, Version};
 use rattler_lock::LockFile;
 use toml_edit::DocumentMut;
+use url::Url;
 
 use crate::{
     Workspace,
@@ -239,6 +240,7 @@ impl WorkspaceMut {
         feature_name: &FeatureName,
         platforms: &[Platform],
         editable: bool,
+        pypi_index: &Option<Url>,
         dry_run: bool,
     ) -> Result<Option<UpdateDeps>, miette::Error> {
         let mut conda_specs_to_add_constraints_for = IndexMap::new();
@@ -316,6 +318,7 @@ impl WorkspaceMut {
                 platforms,
                 feature_name,
                 Some(editable),
+                &pypi_index,
                 DependencyOverwriteBehavior::Overwrite,
                 location,
             )?;
@@ -416,6 +419,7 @@ impl WorkspaceMut {
                 feature_name,
                 platforms,
                 editable,
+                pypi_index,
             )?;
             implicit_constraints.extend(pypi_constraints);
         }
@@ -500,6 +504,7 @@ impl WorkspaceMut {
                 platforms,
                 feature_name,
                 None,
+                &None,
                 DependencyOverwriteBehavior::Overwrite,
                 None,
             )?;
@@ -597,6 +602,7 @@ impl WorkspaceMut {
         feature_name: &FeatureName,
         platforms: &[Platform],
         editable: bool,
+        pypi_index: &Option<Url>,
     ) -> miette::Result<HashMap<String, String>> {
         let mut implicit_constraints = HashMap::new();
 
@@ -651,6 +657,7 @@ impl WorkspaceMut {
                     platforms,
                     feature_name,
                     Some(editable),
+                    pypi_index,
                     DependencyOverwriteBehavior::Overwrite,
                     location,
                 )?;

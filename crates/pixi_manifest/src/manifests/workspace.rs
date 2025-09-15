@@ -7,6 +7,7 @@ use pixi_pypi_spec::{PixiPypiSpec, PypiPackageName};
 use pixi_spec::PixiSpec;
 use rattler_conda_types::{ParseStrictness::Strict, Platform, Version, VersionSpec};
 use toml_edit::Value;
+use url::Url;
 
 use crate::{
     DependencyOverwriteBehavior, GetFeatureError, Preview, PrioritizedChannel,
@@ -17,6 +18,7 @@ use crate::{
     error::{DependencyError, UnknownFeature},
     feature::{Feature, FeatureName},
     manifests::document::ManifestDocument,
+    pypi::pypi_options::PypiOptions,
     solve_group::SolveGroups,
     to_options,
     toml::{
@@ -506,6 +508,7 @@ impl WorkspaceManifestMut<'_> {
         platforms: &[Platform],
         feature_name: &FeatureName,
         editable: Option<bool>,
+        pypi_index: &Option<Url>,
         overwrite_behavior: DependencyOverwriteBehavior,
         location: Option<PypiDependencyLocation>,
     ) -> miette::Result<bool> {
@@ -515,7 +518,7 @@ impl WorkspaceManifestMut<'_> {
             match self
                 .workspace
                 .get_or_insert_target_mut(platform, Some(feature_name))
-                .try_add_pep508_dependency(requirement, editable, overwrite_behavior)
+                .try_add_pep508_dependency(requirement, editable, &pypi_index, overwrite_behavior)
             {
                 Ok(true) => {
                     self.document.add_pypi_dependency(
@@ -524,6 +527,7 @@ impl WorkspaceManifestMut<'_> {
                         platform,
                         feature_name,
                         editable,
+                        pypi_index,
                         location,
                     )?;
                     any_added = true;
@@ -672,6 +676,40 @@ impl WorkspaceManifestMut<'_> {
         for channel in current_clone.iter() {
             channels.push(Value::from(channel.clone()));
         }
+
+        Ok(())
+    }
+
+    /// Adds the pypi-options to the manifest.
+    ///
+    /// This function modifies both the workspace and the TOML document. Use
+    /// `ManifestProvenance::save` to persist the changes to disk.
+    pub fn add_pypi_options(
+        &mut self,
+        option: PypiOptions,
+        feature_name: &FeatureName,
+    ) -> miette::Result<()> {
+        // Get the current pypi-options and update them
+        let current = if feature_name.is_default() {
+            &mut self.workspace.workspace.pypi_options
+        } else {
+            self.workspace
+                .get_or_insert_feature_mut(feature_name)
+                .pypi_options_mut()
+        };
+        let new_option = match current {
+            Some(current) => current.union(&option).unwrap(),
+            None => option,
+        };
+
+        // Update both the parsed channels and the TOML document
+
+        *current = Some(new_option.clone());
+
+        // Update the TOML document
+        self.document
+            .add_pypi_options(&new_option, feature_name)
+            .unwrap();
 
         Ok(())
     }
@@ -919,6 +957,7 @@ start = "python -m flask run --port=5050"
                 &[],
                 &FeatureName::DEFAULT,
                 None,
+                &None,
                 DependencyOverwriteBehavior::Overwrite,
                 None,
             )
@@ -946,6 +985,7 @@ start = "python -m flask run --port=5050"
                 &[],
                 &FeatureName::from("test"),
                 None,
+                &None,
                 DependencyOverwriteBehavior::Overwrite,
                 None,
             )

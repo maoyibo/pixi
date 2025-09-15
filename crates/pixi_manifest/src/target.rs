@@ -4,6 +4,7 @@ use indexmap::{IndexMap, map::Entry};
 use itertools::Either;
 use pixi_spec::PixiSpec;
 use rattler_conda_types::{PackageName, ParsePlatformError, Platform};
+use url::Url;
 
 use super::error::DependencyError;
 use crate::{
@@ -227,6 +228,7 @@ impl WorkspaceTarget {
         &mut self,
         requirement: &pep508_rs::Requirement,
         editable: Option<bool>,
+        pypi_index: &Option<Url>,
         dependency_overwrite_behavior: DependencyOverwriteBehavior,
     ) -> Result<bool, DependencyError> {
         if self.has_pypi_dependency(requirement, false) {
@@ -247,6 +249,12 @@ impl WorkspaceTarget {
         // Convert to an internal representation
         let name = PypiPackageName::from_normalized(requirement.name.clone());
         let mut requirement = PixiPypiSpec::try_from(requirement.clone()).map_err(Box::new)?;
+        if pypi_index.is_some() {
+            match requirement {
+                PixiPypiSpec::Version { ref mut index, .. } => *index = pypi_index.clone(),
+                _ => (),
+            }
+        }
         if let Some(editable) = editable {
             requirement.set_editable(editable);
         }

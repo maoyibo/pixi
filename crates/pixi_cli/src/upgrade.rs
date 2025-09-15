@@ -103,6 +103,7 @@ pub async fn execute(args: Args) -> miette::Result<()> {
             &args.specs.feature,
             &[],
             false,
+            &None, //pixi add specific options
             args.dry_run,
         )
         .await

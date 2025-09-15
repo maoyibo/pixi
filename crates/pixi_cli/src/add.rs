@@ -1,11 +1,18 @@
+use std::{str::FromStr, sync::Arc};
+
 use clap::Parser;
 use indexmap::IndexMap;
 use miette::IntoDiagnostic;
 use pixi_config::ConfigCli;
+use pixi_consts::consts::DEFAULT_PYPI_INDEX_URL;
 use pixi_core::{WorkspaceLocator, environment::sanity_check_workspace, workspace::DependencyType};
-use pixi_manifest::{FeatureName, KnownPreviewFeature, SpecType};
+use pixi_manifest::{
+    FeatureName, KnownPreviewFeature, PrioritizedChannel, SpecType,
+    pypi::pypi_options::{NoBuildIsolation, PypiOptions},
+};
 use pixi_spec::{GitSpec, SourceLocationSpec, SourceSpec};
-use rattler_conda_types::{MatchSpec, PackageName};
+use rattler_conda_types::{Channel, MatchSpec, NamedChannelOrUrl, PackageName};
+use url::Url;
 
 use crate::{
     cli_config::{DependencyConfig, LockFileUpdateConfig, NoInstallConfig, WorkspaceConfig},
@@ -92,6 +99,15 @@ pub struct Args {
     /// Whether the pypi requirement should be editable
     #[arg(long, requires = "pypi")]
     pub editable: bool,
+    /// The URLs to use when resolving dependencies, in addition to the default index.
+    #[arg(long, requires = "pypi", conflicts_with_all = ["default_index"])]
+    pub index: Option<String>,
+    /// The URL of the default package index (by default: <https://pypi.org/simple>)
+    #[arg(long, requires = "pypi", conflicts_with_all = ["index"])]
+    pub default_index: Option<String>,
+    /// The channel to use when resolving dependencies, it will add to workspace.channels if not already present.
+    #[arg(long, conflicts_with_all = ["pypi"])]
+    pub channel: Option<String>,
 }
 
 pub async fn execute(args: Args) -> miette::Result<()> {
@@ -116,6 +132,41 @@ pub async fn execute(args: Args) -> miette::Result<()> {
         .manifest()
         .add_platforms(dependency_config.platforms.iter(), &FeatureName::DEFAULT)?;
 
+    // Add default channel to workspace if not already present
+    let channel = match &args.channel {
+        Some(channel_name) => {
+            workspace.manifest().add_channels(
+                [PrioritizedChannel::from(
+                    NamedChannelOrUrl::from_str(channel_name).unwrap(),
+                )],
+                &FeatureName::DEFAULT,
+                false,
+            )?;
+            Some(Arc::new(
+                Channel::from_str(channel_name, &workspace.workspace().channel_config())
+                    .into_diagnostic()?,
+            ))
+        }
+        _ => None,
+    };
+
+    // Add default index to workspace pypi-options if not already present
+    if let Some(index_url) = &args.default_index {
+        let options = PypiOptions {
+            index_url: Some(Url::parse(index_url).unwrap()),
+            extra_index_urls: Some(vec![DEFAULT_PYPI_INDEX_URL.clone()]),
+            find_links: None,
+            no_build_isolation: NoBuildIsolation::default(),
+            index_strategy: None,
+            no_build: None,
+            dependency_overrides: None,
+            no_binary: None,
+        };
+        workspace
+            .manifest()
+            .add_pypi_options(options, &FeatureName::DEFAULT)?;
+    }
+
     let (match_specs, source_specs, pypi_deps) = match dependency_config.dependency_type() {
         DependencyType::CondaDependency(spec_type) => {
             // if user passed some git configuration
@@ -123,7 +174,10 @@ pub async fn execute(args: Args) -> miette::Result<()> {
             let passed_specs: IndexMap<PackageName, (MatchSpec, SpecType)> = dependency_config
                 .specs()?
                 .into_iter()
-                .map(|(name, spec)| (name, (spec, spec_type)))
+                .map(|(name, mut spec)| {
+                    spec.channel = channel.clone();
+                    (name, (spec, spec_type))
+                })
                 .collect();
 
             if let Some(git) = &dependency_config.git {
@@ -193,6 +247,11 @@ pub async fn execute(args: Args) -> miette::Result<()> {
     // TODO: add dry_run logic to add
     let dry_run = false;
 
+    let pypi_index = match &args.index {
+        Some(index) => Some(Url::from_str(index).map_err(|e| miette::miette!(e))?),
+        None => None,
+    };
+
     let update_deps = match Box::pin(workspace.update_dependencies(
         match_specs,
         pypi_deps,
@@ -202,6 +261,7 @@ pub async fn execute(args: Args) -> miette::Result<()> {
         &dependency_config.feature,
         &dependency_config.platforms,
         args.editable,
+        &pypi_index,
         dry_run,
     ))
     .await

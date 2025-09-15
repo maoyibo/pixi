@@ -370,6 +370,10 @@ impl Feature {
     pub fn pypi_options(&self) -> Option<&PypiOptions> {
         self.pypi_options.as_ref()
     }
+
+    pub fn pypi_options_mut(& mut self) -> & mut Option<PypiOptions> {
+        & mut self.pypi_options
+    }
 }
 
 #[cfg(test)]

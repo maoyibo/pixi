@@ -373,6 +373,9 @@ impl PixiControl {
                 },
                 config: Default::default(),
                 editable: false,
+                index: None,
+                default_index: None,
+                channel: None,
             },
         }
     }
